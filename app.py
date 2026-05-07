@@ -1,0 +1,850 @@
+import base64
+from pathlib import Path
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+st.set_page_config(
+    page_title="Calculadora TRM",
+    page_icon="favicon.ico",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+
+def file_to_base64(path: str):
+    file_path = Path(path)
+    if not file_path.exists():
+        return None
+    return base64.b64encode(file_path.read_bytes()).decode("utf-8")
+
+
+def money(value):
+    if value is None:
+        return "—"
+    text = f"{value:,.2f}"
+    text = text.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"$ {text}"
+
+
+def num(value):
+    if value is None:
+        return "—"
+    text = f"{value:,.2f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def safe_div(a, b):
+    if a is None or b is None or b == 0:
+        return None
+    return a / b
+
+
+def limpiar_si_cambia_modo(modo_actual):
+    if "modo_anterior" not in st.session_state:
+        st.session_state.modo_anterior = modo_actual
+
+    if st.session_state.modo_anterior != modo_actual:
+        for key in [
+            "trm",
+            "unidad_sap",
+            "valor_material_sap",
+            "valor_unitario_fv",
+            "valor_total_fv_factura",
+            "unidad_medida",
+            "cantidad_total_fv",
+        ]:
+            st.session_state[key] = None
+
+        st.session_state.modo_anterior = modo_actual
+        st.rerun()
+
+
+def calcular_unidad(trm, unidad_sap, valor_unitario_fv, valor_total_fv_factura, unidad_medida, cantidad_total_fv):
+    validacion_trm = safe_div(valor_unitario_fv, trm)
+
+    valor_estiba = (
+        safe_div(valor_unitario_fv * unidad_medida, unidad_sap)
+        if valor_unitario_fv is not None and unidad_medida is not None
+        else None
+    )
+
+    valor_total_calculado = (
+        cantidad_total_fv * valor_estiba
+        if cantidad_total_fv is not None and valor_estiba is not None
+        else None
+    )
+
+    diferencia = (
+        valor_total_fv_factura - valor_total_calculado
+        if valor_total_fv_factura is not None and valor_total_calculado is not None
+        else None
+    )
+
+    return validacion_trm, None, valor_estiba, valor_total_calculado, diferencia
+
+
+def calcular_kg(trm, unidad_sap, valor_unitario_fv, valor_total_fv_factura, unidad_medida, cantidad_total_fv):
+    validacion_trm = safe_div(valor_unitario_fv, trm)
+    cantidad_recibir = safe_div(cantidad_total_fv, unidad_medida)
+
+    valor_estiba = (
+        safe_div(valor_unitario_fv * unidad_medida, unidad_sap)
+        if valor_unitario_fv is not None and unidad_medida is not None
+        else None
+    )
+
+    valor_total_calculado = (
+        cantidad_total_fv * valor_unitario_fv
+        if cantidad_total_fv is not None and valor_unitario_fv is not None
+        else None
+    )
+
+    diferencia = (
+        valor_total_fv_factura - valor_total_calculado
+        if valor_total_fv_factura is not None and valor_total_calculado is not None
+        else None
+    )
+
+    return validacion_trm, cantidad_recibir, valor_estiba, valor_total_calculado, diferencia
+
+
+logo_b64 = file_to_base64("favicon.ico")
+
+if logo_b64:
+    logo_html = f'<img src="data:image/x-icon;base64,{logo_b64}" class="logo-img" alt="Logo">'
+else:
+    logo_html = '<div class="logo-fallback">TRM</div>'
+
+
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+    --azul: #002f8f;
+    --azul-2: #0047c7;
+    --azul-oscuro: #06173f;
+    --azul-suave: #eef5ff;
+    --borde: #d5deea;
+    --texto: #081a3a;
+    --gris: #64748b;
+    --verde: #027a48;
+    --verde-suave: #ecfdf3;
+}
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background: #ffffff;
+    border-top: 7px solid var(--azul);
+}
+
+.block-container {
+    max-width: 1120px;
+    padding-top: 0;
+    padding-bottom: 1rem;
+}
+
+header[data-testid="stHeader"] {
+    background: transparent;
+}
+
+.main-shell {
+    background: #ffffff;
+    border-bottom: 1px solid var(--borde);
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    margin-bottom: 14px;
+}
+
+.topbar {
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 38px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo-img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+}
+
+.logo-fallback {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 3px solid var(--azul);
+    color: var(--azul);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: .7rem;
+}
+
+.brand-divider {
+    width: 1px;
+    height: 40px;
+    background: var(--borde);
+}
+
+.brand-title {
+    font-size: 1.12rem;
+    font-weight: 900;
+    color: var(--azul-oscuro);
+    line-height: 1;
+}
+
+.brand-subtitle {
+    color: #334155;
+    font-size: .75rem;
+    margin-top: 5px;
+    font-weight: 700;
+}
+
+.status {
+    background: var(--verde-suave);
+    color: var(--verde);
+    border: 1px solid #86efac;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: .76rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.app-card {
+    border: 1px solid var(--borde);
+    border-radius: 16px;
+    background: #ffffff;
+    padding: 22px 18px 20px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, .025);
+}
+
+.section-title {
+    font-size: .78rem;
+    font-weight: 900;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--azul);
+    margin-bottom: 18px;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid var(--borde) !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, .025);
+    padding: 16px !important;
+}
+
+div[data-testid="stRadio"] label {
+    font-weight: 800 !important;
+    color: #334155 !important;
+}
+
+div[data-testid="stRadio"] p {
+    font-weight: 800 !important;
+    color: var(--azul-oscuro) !important;
+}
+
+div[data-testid="stNumberInput"] label {
+    font-size: .82rem !important;
+    font-weight: 800 !important;
+    color: var(--azul-oscuro) !important;
+}
+
+div[data-testid="stNumberInput"] input {
+    border-radius: 9px !important;
+    border: 1px solid #c7d3e3 !important;
+    background: #ffffff !important;
+    min-height: 42px;
+    color: var(--azul) !important;
+    font-weight: 900 !important;
+    font-size: .92rem !important;
+}
+
+div[data-testid="stNumberInput"] input:focus {
+    border-color: var(--azul-2) !important;
+    box-shadow: 0 0 0 3px rgba(0, 71, 199, .12) !important;
+}
+
+.trm-help {
+    margin-top: 18px;
+    border: 1px solid #c7d3e3;
+    background: linear-gradient(180deg, #f8fbff 0%, #f3f7ff 100%);
+    border-radius: 12px;
+    padding: 18px 20px;
+    font-size: .86rem;
+    line-height: 1.55;
+    color: var(--azul-oscuro);
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.trm-icon {
+    color: var(--azul-2);
+    font-size: 1.55rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.trm-help-title {
+    color: var(--azul);
+    font-size: .78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .13em;
+    margin-bottom: 7px;
+}
+
+.results {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.metric {
+    border: 1px solid #cfd8e6;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 14px;
+    min-height: 76px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 3px 8px rgba(15, 23, 42, .035);
+}
+
+.metric.ok {
+    background: linear-gradient(180deg, #ecfdf3 0%, #d1fadf 100%);
+    border: 1px solid #86efac;
+}
+
+.metric-label {
+    color: var(--azul-oscuro);
+    font-size: .72rem;
+    font-weight: 900;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.metric-value {
+    color: var(--azul-oscuro);
+    font-size: 1.25rem;
+    font-weight: 900;
+    letter-spacing: -.04em;
+}
+
+.result-footer {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 12px;
+    align-items: center;
+    margin-top: 14px;
+}
+
+.validation-ok,
+.validation-warn,
+.empty-note-box {
+    border-radius: 9px;
+    padding: 13px 16px;
+    font-weight: 800;
+    font-size: .86rem;
+}
+
+.validation-ok,
+.empty-note-box {
+    background: var(--verde-suave);
+    border: 1px solid #86efac;
+    color: var(--verde);
+}
+
+.validation-warn {
+    background: #eef5ff;
+    border: 1px solid #9cc2ff;
+    color: #0b3b86;
+}
+
+.print-card {
+    display: none;
+}
+
+button[kind="primary"] {
+    background: var(--azul) !important;
+    border: 1px solid var(--azul) !important;
+    border-radius: 9px !important;
+    min-height: 44px !important;
+    font-weight: 900 !important;
+}
+
+.footer {
+    text-align: center;
+    color: #94a3b8;
+    font-size: .75rem;
+    padding: 10px;
+}
+
+@media(max-width: 900px) {
+    .results {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .result-footer {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media(max-width: 560px) {
+    .results {
+        grid-template-columns: 1fr;
+    }
+
+    .topbar {
+        height: auto;
+        padding: 16px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .brand-divider {
+        display: none;
+    }
+}
+
+@media print {
+    @page {
+        size: letter portrait;
+        margin: 7mm;
+    }
+
+    header,
+    .stToolbar,
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    .stButton,
+    .no-print {
+        display: none !important;
+    }
+
+    .stApp {
+        background: #ffffff !important;
+        border-top: none !important;
+    }
+
+    .block-container {
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    .main-shell,
+    div[data-testid="stVerticalBlockBorderWrapper"],
+    .metric,
+    .validation-ok,
+    .validation-warn,
+    .print-card {
+        box-shadow: none !important;
+    }
+
+    .main-shell {
+        margin-bottom: 5px !important;
+    }
+
+    .topbar {
+        min-height: 38px !important;
+        padding: 4px 10px !important;
+    }
+
+    .logo-img,
+    .logo-fallback {
+        width: 26px !important;
+        height: 26px !important;
+    }
+
+    .brand-title {
+        font-size: 12px !important;
+    }
+
+    .brand-subtitle,
+    .status {
+        font-size: 8px !important;
+    }
+
+    .section-title {
+        font-size: 8px !important;
+        margin-bottom: 4px !important;
+    }
+
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        padding: 6px !important;
+        margin-bottom: 5px !important;
+        border-radius: 8px !important;
+    }
+
+    .trm-help {
+        display: none !important;
+    }
+
+    div[data-testid="stNumberInput"] label,
+    div[data-testid="stRadio"] label {
+        font-size: 8px !important;
+    }
+
+    div[data-testid="stNumberInput"] input {
+        min-height: 22px !important;
+        font-size: 8px !important;
+        padding: 1px 5px !important;
+    }
+
+    .results {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 5px !important;
+    }
+
+    .metric {
+        min-height: 54px !important;
+        padding: 7px !important;
+        border-radius: 8px !important;
+    }
+
+    .metric-label {
+        font-size: 6px !important;
+    }
+
+    .metric-value {
+        font-size: 12px !important;
+    }
+
+    .result-footer {
+        display: block !important;
+    }
+
+    .validation-ok,
+    .validation-warn,
+    .empty-note-box {
+        font-size: 9px !important;
+        padding: 7px !important;
+        margin-top: 5px !important;
+    }
+
+    .print-card {
+        display: block !important;
+        font-size: 9px !important;
+        padding: 7px !important;
+        margin-top: 5px !important;
+        border: 1px solid #dbe3ed;
+        border-radius: 8px;
+    }
+
+    .footer {
+        font-size: 7px !important;
+        padding: 5px !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+st.markdown(
+    f"""
+<div class="main-shell">
+    <div class="topbar">
+        <div class="brand">
+            {logo_html}
+            <div class="brand-divider"></div>
+            <div>
+                <div class="brand-title">CalculadoraTRM</div>
+                <div class="brand-subtitle">Validación financiera SAP / FV</div>
+            </div>
+        </div>
+        <div class="status">✓ Sistema operativo</div>
+    </div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+
+with st.container(border=True):
+    modo = st.radio(
+        "Tipo de validación",
+        ["Por unidad", "Por KG"],
+        horizontal=True,
+        key="modo",
+    )
+
+limpiar_si_cambia_modo(modo)
+
+
+with st.container(border=True):
+    st.markdown('<div class="section-title">Datos SAP</div>', unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        trm = st.number_input(
+            "TRM del día de la factura ⓘ",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite TRM",
+            step=0.01,
+            format="%.2f",
+            key="trm",
+            help="""
+Transacción ME21N.
+Cabecera > Dat.org.
+Org compras: 5RPC.
+Grupo compras: 006.
+Sociedad: BA00.
+
+Entrega factura:
+Fecha del día.
+Moneda.
+Enter.
+
+Entrega de factura:
+Tipo de cambio = TRM correcta.
+""",
+        )
+
+    with c2:
+        unidad_sap = st.number_input(
+            "Unidad de medida SAP",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite unidad SAP",
+            step=0.01,
+            format="%.2f",
+            key="unidad_sap",
+        )
+
+    with c3:
+        valor_material_sap = st.number_input(
+            "Valor unidad material SAP",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite valor SAP",
+            step=0.01,
+            format="%.2f",
+            key="valor_material_sap",
+        )
+
+    st.markdown(
+        """
+<div class="trm-help">
+    <div class="trm-icon">▣</div>
+    <div>
+        <div class="trm-help-title">Proceso SAP para obtener la TRM</div>
+        En la transacción <strong>ME21N</strong>, diríjase a <strong>Cabecera &gt; Dat. org.</strong>
+        y registre <strong>Org. compras 5RPC</strong>, <strong>Grupo compras 006</strong> y
+        <strong>Sociedad BA00</strong>.<br>
+        Luego vaya a <strong>Entrega / Factura</strong>, seleccione la <strong>fecha del día</strong>,
+        confirme la <strong>moneda</strong> y presione <strong>Enter</strong>.
+        Finalmente, en <strong>Entrega de factura</strong>, el campo <strong>Tipo de cambio</strong>
+        mostrará la TRM correcta.
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+with st.container(border=True):
+    st.markdown('<div class="section-title">Datos de factura</div>', unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        valor_unitario_fv = st.number_input(
+            "Valor unitario FV",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite valor unitario",
+            step=0.01,
+            format="%.2f",
+            key="valor_unitario_fv",
+        )
+
+    with c2:
+        valor_total_fv_factura = st.number_input(
+            "Valor total FV factura",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite total factura",
+            step=0.01,
+            format="%.2f",
+            key="valor_total_fv_factura",
+        )
+
+
+with st.container(border=True):
+    st.markdown('<div class="section-title">Datos de validación</div>', unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        unidad_medida = st.number_input(
+            "Unidad de medida",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite unidad",
+            step=0.01,
+            format="%.2f",
+            key="unidad_medida",
+        )
+
+    with c2:
+        cantidad_total_fv = st.number_input(
+            "Cantidad total FV",
+            min_value=0.0,
+            value=None,
+            placeholder="Digite cantidad",
+            step=0.01,
+            format="%.2f",
+            key="cantidad_total_fv",
+        )
+
+
+if modo == "Por unidad":
+    validacion_trm, cantidad_recibir, valor_estiba, valor_total_calculado, diferencia = calcular_unidad(
+        trm,
+        unidad_sap,
+        valor_unitario_fv,
+        valor_total_fv_factura,
+        unidad_medida,
+        cantidad_total_fv,
+    )
+else:
+    validacion_trm, cantidad_recibir, valor_estiba, valor_total_calculado, diferencia = calcular_kg(
+        trm,
+        unidad_sap,
+        valor_unitario_fv,
+        valor_total_fv_factura,
+        unidad_medida,
+        cantidad_total_fv,
+    )
+
+resultado_ok = diferencia is not None and abs(diferencia) <= 1
+clase_primera = "metric ok" if resultado_ok else "metric"
+
+
+with st.container(border=True):
+    st.markdown('<div class="section-title">Resultados calculados</div>', unsafe_allow_html=True)
+
+    if modo == "Por unidad":
+        st.markdown(
+            f"""
+<div class="results">
+    <div class="{clase_primera}">
+        <div class="metric-label">Validación FV sobre TRM</div>
+        <div class="metric-value">{num(validacion_trm)}</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Valor por estiba</div>
+        <div class="metric-value">{money(valor_estiba)}</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Valor total FV calculado</div>
+        <div class="metric-value">{money(valor_total_calculado)}</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Diferencia</div>
+        <div class="metric-value">{money(diferencia)}</div>
+    </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+<div class="results">
+    <div class="{clase_primera}">
+        <div class="metric-label">Validación FV sobre TRM</div>
+        <div class="metric-value">{num(validacion_trm)}</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Cantidad total a recibir</div>
+        <div class="metric-value">{num(cantidad_recibir)}</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Valor por estiba</div>
+        <div class="metric-value">{money(valor_estiba)}</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Valor total FV calculado</div>
+        <div class="metric-value">{money(valor_total_calculado)}</div>
+    </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    if diferencia is None:
+        mensaje_html = '<div class="empty-note-box">✓ Complete los campos requeridos para generar la validación.</div>'
+    elif abs(diferencia) <= 1:
+        mensaje_html = f'<div class="validation-ok">✓ Perfecto: los valores coinciden. Diferencia: {money(diferencia)}</div>'
+    elif diferencia > 0:
+        mensaje_html = f'<div class="validation-warn">Atención: el cálculo queda por debajo de la factura por {money(diferencia)}.</div>'
+    else:
+        mensaje_html = f'<div class="validation-warn">Atención: el cálculo queda por encima de la factura por {money(abs(diferencia))}.</div>'
+
+    st.markdown(
+        f"""
+<div class="result-footer">
+    {mensaje_html}
+    <div class="no-print">
+""",
+        unsafe_allow_html=True,
+    )
+
+    if st.button("🖨️ Imprimir soporte de validación", type="primary", use_container_width=True):
+        components.html(
+            """
+<script>
+    setTimeout(function() {
+        window.parent.print();
+    }, 300);
+</script>
+""",
+            height=0,
+        )
+
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+<div class="print-card">
+    <strong>Soporte de validación</strong><br>
+    Tipo: {modo}<br>
+    TRM: {num(trm)}<br>
+    Valor unitario FV: {money(valor_unitario_fv)}<br>
+    Total factura: {money(valor_total_fv_factura)}<br>
+    Total calculado: {money(valor_total_calculado)}<br>
+    Diferencia: {money(diferencia)}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+st.markdown(
+    '<div class="footer">CalculadoraTRM · Sistema profesional de validación</div>',
+    unsafe_allow_html=True,
+)
